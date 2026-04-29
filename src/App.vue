@@ -9,275 +9,149 @@ let rafId = 0;
 let renderer: THREE.WebGLRenderer;
 let resizeHandler: () => void;
 
-/** 画布程序化纹理，卸载时 dispose */
-const texturesPendingDispose: THREE.Texture[] = [];
-
-/** 棋盘格 color 贴图 → 给 Lambert.map */
-function createCheckerColorTexture(): THREE.CanvasTexture {
-  const canvasSize = 256;
-  const gridCount = 8;
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = canvasSize;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("canvas 2d unsupported");
-  const cell = canvasSize / gridCount;
-  for (let gy = 0; gy < gridCount; gy++) {
-    for (let gx = 0; gx < gridCount; gx++) {
-      ctx.fillStyle = (gx + gy) % 2 === 0 ? "#aaccee" : "#446699";
-      ctx.fillRect(gx * cell, gy * cell, cell, cell);
-    }
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(4, 4);
-  return tex;
-}
-
-/** 斜条纹 color 贴图 → 给 Phong.map */
-function createStripeColorTexture(): THREE.CanvasTexture {
-  const canvasSize = 256;
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = canvasSize;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("canvas 2d unsupported");
-  ctx.fillStyle = "#228855";
-  ctx.fillRect(0, 0, canvasSize, canvasSize);
-  ctx.strokeStyle = "rgba(0,0,0,0.35)";
-  ctx.lineWidth = 6;
-  const step = 28;
-  for (let i = -canvasSize; i < canvasSize * 2; i += step) {
-    ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i + canvasSize, canvasSize);
-    ctx.stroke();
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(3, 3);
-  return tex;
-}
-
-/**
- * Toon 专用 gradientMap：一条从左暗到右亮的灰度条。
- * 着色器用光照强弱对应横坐标去取样 → 形成分层明暗。
- * NearestFilter：台阶不被线性插值糊成渐变。
- */
-function createToonGradientMapTexture(): THREE.CanvasTexture {
-  const bandCount = 5;
-  const grayscaleLevels = [38, 88, 138, 188, 238];
-  const canvas = document.createElement("canvas");
-  canvas.width = bandCount;
-  canvas.height = 1;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("canvas 2d unsupported");
-  for (let i = 0; i < bandCount; i++) {
-    const g = grayscaleLevels[i];
-    ctx.fillStyle = `rgb(${g},${g},${g})`;
-    ctx.fillRect(i, 0, 1, 1);
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.LinearSRGBColorSpace;
-  tex.minFilter = THREE.NearestFilter;
-  tex.magFilter = THREE.NearestFilter;
-  tex.wrapS = THREE.ClampToEdgeWrapping;
-  tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.generateMipmaps = false;
-  return tex;
-}
-
 onMounted(() => {
-  // 创建场景
   const scene = new THREE.Scene();
-  // 设置场景背景颜色
-  scene.background = new THREE.Color(0x111111);
+  scene.background = new THREE.Color(0x151520);
 
-  // 创建相机
   const camera = new THREE.PerspectiveCamera(
-    45, // 视角
+    50,
     window.innerWidth / window.innerHeight,
-    0.1, // 进平面
-    1000, // 远平面
+    0.1,
+    200,
   );
+  camera.position.set(0, 12, 22);
+  camera.lookAt(0, 2, 0);
 
-  // 添加网格辅助线，方便观察空间位置
-  scene.add(new THREE.GridHelper(20, 20));
-
-  camera.position.set(0, 0, 18);
-  camera.lookAt(0, 0, 10);
-
-  // 使用抗锯齿
   renderer = new THREE.WebGLRenderer({antialias: true});
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // 允许渲染器开影子
+  renderer.shadowMap.enabled = true;
+  // 设置影子类型
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // 设置色值映射
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1;
   document.getElementById("app")?.appendChild(renderer.domElement);
 
-  // 需要光源的材质必须先加灯，否则一片漆黑
-  // 环境光：让整个场景有个基础亮度，避免背光面全黑
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-  // 平行光：模拟太阳，有方向，会产生明暗面 范围是0-180度
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-  // 设置平行光的位置
-  dirLight.position.set(5, 8, 5);
-  scene.add(dirLight);
+  scene.add(new THREE.GridHelper(30, 30, 0x444455, 0x2a2a35));
 
-  // 创建几何体 半径 细分水平 细分垂直
-  const geo = new THREE.SphereGeometry(0.9, 32, 32);
+  // ─── 半球光 HemisphereLight ───
+  // 参数：(天空色, 地面色, intensity)
+  // 从上到下混合两色 → 室内外「天光 + 地面对反射」的简单近似，不产生阴影
+  const hemi = new THREE.HemisphereLight(0x87ceeb, 0x3a4a66, 0.8);
+  scene.add(hemi);
 
-  // 给 basic 专用几何体写入顶点颜色数据（y越高越红，越低越蓝）
-  const geoColored = new THREE.SphereGeometry(0.9, 32, 32);
-  const vertCount = geoColored.attributes.position.count;
-  const colorData = new Float32Array(vertCount * 3);
-  for (let i = 0; i < vertCount; i++) {
-    const y = geoColored.attributes.position.getY(i);
-    // y 范围约 -0.9 ~ 0.9，归一化到 0~1
-    const t = (y / 0.9 + 1) / 2;
-    colorData[i * 3] = t; // R：顶部偏红
-    colorData[i * 3 + 1] = 0.5; // G：固定低绿
-    colorData[i * 3 + 2] = 1 - t; // B：底部偏蓝
-  }
-  geoColored.setAttribute("color", new THREE.BufferAttribute(colorData, 3));
+  // ─── 环境光 AmbientLight ───
+  // 参数：(颜色, intensity)
+  // 四面八方均匀提亮，不产生方向与阴影（避免只靠定向光导致-背光面全黑）
+  const ambient = new THREE.AmbientLight(0xffffff, 0.18);
+  scene.add(ambient);
 
-  // 设置几何体之间的间距
-  const spacing = 2.6;
+  // ─── 平行光 DirectionalLight ───
+  // 光线互相平行 → 常用于太阳 / 远距离主光；可产生阴影（需 castShadow）
+  const sunDir = new THREE.Vector3(-6, -10, -4).normalize();
+  const sun = new THREE.DirectionalLight(0xfff2dd, 1.4);
+  sun.position.copy(sunDir.multiplyScalar(-1).multiplyScalar(22));
+  sun.castShadow = true;
+  sun.shadow.mapSize.width = 2048;
+  sun.shadow.mapSize.height = 2048;
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = 60;
+  sun.shadow.camera.left = -14;
+  sun.shadow.camera.right = 14;
+  sun.shadow.camera.top = 14;
+  sun.shadow.camera.bottom = -14;
+  sun.shadow.bias = -0.0003;
+  scene.add(sun);
 
-  // ─────────────────────────────────────────────
-  // 第一组：不依赖光源的材质
-  // ─────────────────────────────────────────────
+  // ─── 点光源 PointLight ───
+  // 从一点向四面八方衰减；参数：(颜色, intensity, distance, decay)
+  // distance：0 表示无限远（不衰减衰减项仍有）；decay 常用 2（物理更接近平方反比）
+  const pointLt = new THREE.PointLight(0x44ffff, 88, 32, 2);
+  pointLt.position.set(-8, 5, 3);
+  pointLt.castShadow = true;
+  pointLt.shadow.mapSize.set(1024, 1024);
+  scene.add(pointLt);
 
-  // MeshBasicMaterial：最简单的材质，纯色显示，完全不受光照影响
-  // 常用于：调试、UI 标记、不需要立体感的场景
-  // vertexColors: true → 忽略 color，改用几何体顶点数据里的颜色（上红下蓝渐变）
-  const basic = new THREE.MeshBasicMaterial({
-    color: 0xff6600,
-    transparent: false,
-    opacity: 0.9,
-    // alphaTest: 0.5, //硬切边
+  // ─── 聚光灯 SpotLight ───
+  // 圆锥形光锥；参数：(颜色, intensity, distance, angle, penumbra, decay)
+  // angle：圆锥半角（弧度）；penumbra：锥缘柔化 0~1
+  const spotLt = new THREE.SpotLight(0x588bfb, 28, 40, Math.PI / 6, 0.35, 2);
+  spotLt.position.set(10, 14, -2);
+  spotLt.target.position.set(-2, 0, -4);
+  spotLt.castShadow = true;
+  spotLt.shadow.mapSize.set(1024, 1024);
+  scene.add(spotLt);
+  scene.add(spotLt.target);
 
-    wireframe: false,
-    side: THREE.DoubleSide, // 双面渲染  这个后面再说吧
-    depthTest: true,
-    vertexColors: true,
-  });
-
-  // MeshNormalMaterial：把顶点法线方向映射成 RGB 颜色显示
-  // 常用于：调试法线方向是否正确 用三维坐标 对法线方向单位化转为的结果 转为rgb颜色
-  const normal = new THREE.MeshNormalMaterial();
-
-  // MeshDepthMaterial：根据像素距离相机的远近显示深浅（近=白，远=黑）
-  // 常用于：生成深度图，做后处理效果
-  const depth = new THREE.MeshDepthMaterial();
-
-  // 纯白球：MeshBasicMaterial 不受光照，color=白就是纯白
-  const white = new THREE.MeshBasicMaterial({color: 0xffffff, wireframe: true});
-
-  // ─────────────────────────────────────────────
-  // 第二组：经典光照模型（需要光源）
-  // ─────────────────────────────────────────────
-
-  const texLambertMap = createCheckerColorTexture();
-  texturesPendingDispose.push(texLambertMap);
-
-  // MeshLambertMaterial：漫反射材质，只有漫反射光，没有高光
-  // map：颜色贴图 × color；贴图亮时用白色固有色避免串色
-  const lambert = new THREE.MeshLambertMaterial({
-    color: 0x00ffff,
-    map: texLambertMap,
-    emissive: 0x000000,
-    emissiveIntensity: 1,
-  });
-
-  const texPhongMap = createStripeColorTexture();
-  texturesPendingDispose.push(texPhongMap);
-
-  // MeshPhongMaterial：漫反射 + 镜面高光，shininess 控制高光锐度
-  const phong = new THREE.MeshPhongMaterial({
-    color: 0xffffff,
-    emissive: 0x000000,
-    emissiveIntensity: 1,
-    map: texPhongMap,
-    shininess: 120,
-    specular: 0xffffff,
-  });
-
-  const texToonGradient = createToonGradientMapTexture();
-  texturesPendingDispose.push(texToonGradient);
-
-  // MeshToonMaterial：卡通渲染（赛璐珞风格）
-  // gradientMap：明暗按纹理横轴分段（左暗右亮），层数 ≈ 纹理里竖条段数
-  const toon = new THREE.MeshToonMaterial({
-    color: 0xff4488,
-    gradientMap: texToonGradient,
-  });
-
-  // ─────────────────────────────────────────────
-  // 第三组：PBR 物理材质（需要光源，最接近真实世界）
-  // ─────────────────────────────────────────────
-
-  // MeshStandardMaterial：基于物理的渲染（PBR），工程项目首选
-  // metalness：金属度（0=塑料/非金属，1=纯金属）
-  // roughness：粗糙度（0=镜面，1=完全磨砂）
-  const standardPlastic = new THREE.MeshStandardMaterial({
-    color: 0xffaa00,
-    metalness: 0,
-    roughness: 0.4,
-  });
-
-  // MeshStandardMaterial 金属版：metalness=1 呈现金属质感
-  const standardMetal = new THREE.MeshStandardMaterial({
-    color: 0xcccccc,
-    metalness: 1,
-    roughness: 0.1,
-  });
-
-  // MeshPhysicalMaterial：MeshStandardMaterial 的超集，增加透明/折射/清漆等
-  // transmission=1 + transparent=true：玻璃/水晶效果
-  const physical = new THREE.MeshPhysicalMaterial({
-    color: 0x88ccff,
-    transmission: 0.98,
-    transparent: true,
-    roughness: 0,
-    thickness: 1.5,
-  });
-
-  // ─────────────────────────────────────────────
-  // 排列成网格展示
-  // ─────────────────────────────────────────────
-  const materials: Array<{mat: THREE.Material; geo?: THREE.BufferGeometry}> = [
-    {mat: basic, geo: geoColored}, // 顶点色需要有颜色数据的几何体
-    {mat: normal},
-    {mat: depth},
-    {mat: white},
-    {mat: lambert},
-    {mat: phong},
-    {mat: toon},
-    {mat: standardPlastic},
-    {mat: standardMetal},
-    {mat: physical},
+  // 可视化光源方向（仅学习用）；实际项目可删掉以省性能
+  const helpers = [
+    new THREE.DirectionalLightHelper(sun, 3, 0xffdd88),
+    new THREE.PointLightHelper(pointLt, 0.6, 0x44ffff),
+    new THREE.SpotLightHelper(spotLt, 0xff6655),
   ];
+  helpers.forEach((h) => scene.add(h));
 
-  const colCount = 5;
-  const meshList: THREE.Mesh[] = [];
-
-  materials.forEach(({mat, geo: itemGeo}, i) => {
-    const mesh = new THREE.Mesh(itemGeo ?? geo, mat);
-    const col = i % colCount;
-    const row = Math.floor(i / colCount);
-    mesh.position.set((col - 2) * spacing, (0.5 - row) * spacing, 0);
-    scene.add(mesh);
-    meshList.push(mesh);
+  const matStd = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.6,
+    metalness: 0.15,
   });
+
+  const box = new THREE.Mesh(new THREE.BoxGeometry(2.8, 2.8, 2.8), matStd);
+  box.position.set(-4, 1.41, -1);
+  box.castShadow = true;
+  box.receiveShadow = true;
+
+  const cyl = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.6, 1.6, 3.6, 40),
+    matStd,
+  );
+  cyl.position.set(4, 1.81, -1);
+
+  cyl.castShadow = true;
+  cyl.receiveShadow = true;
+
+  const torus = new THREE.Mesh(
+    new THREE.TorusKnotGeometry(1.35, 0.45, 120, 16),
+    matStd,
+  );
+  torus.position.set(0, 2.35, -4);
+  torus.castShadow = true;
+  torus.receiveShadow = true;
+
+  scene.add(box, cyl, torus);
+
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(80, 80),
+    new THREE.MeshStandardMaterial({
+      color: 0x2a2a38,
+      roughness: 0.95,
+      metalness: 0,
+    }),
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
+  controls.target.set(0, 2, -1);
+
+  const clock = new THREE.Clock();
 
   function animate() {
-    meshList.forEach((mesh) => {
-      mesh.rotation.y += 0.005;
-    });
+    const t = clock.getElapsedTime();
+    pointLt.position.x = Math.cos(t * 0.9) * 8;
+    pointLt.position.z = Math.sin(t * 0.9) * 8 + 2;
+    spotLt.position.x = 8 + Math.sin(t * 0.4) * 4;
+    spotLt.target.position.x = Math.sin(t * 0.5) * 3;
+    box.rotation.y += 0.008;
+    cyl.rotation.y += 0.006;
+    torus.rotation.x += 0.005;
+    torus.rotation.y += 0.007;
+    helpers.forEach((h) => h.update?.());
     controls.update();
     rafId = requestAnimationFrame(animate);
     renderer.render(scene, camera);
@@ -295,9 +169,7 @@ onMounted(() => {
 onUnmounted(() => {
   cancelAnimationFrame(rafId);
   window.removeEventListener("resize", resizeHandler);
-  texturesPendingDispose.forEach((t) => t.dispose());
-  texturesPendingDispose.length = 0;
-  renderer.domElement.remove();
   renderer.dispose();
+  renderer.domElement.remove();
 });
 </script>
