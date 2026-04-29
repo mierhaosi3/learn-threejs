@@ -30,15 +30,31 @@ renderer.setPixelRatio(window.devicePixelRatio);
 
 // 常见几何体集合
 const geometries: Array<{ name: string; geo: THREE.BufferGeometry }> = [
-  { name: "Box", geo: new THREE.BoxGeometry(1.2, 1.2, 1.2) },
-  { name: "Sphere", geo: new THREE.SphereGeometry(0.7, 24, 16) },
-  { name: "Plane", geo: new THREE.PlaneGeometry(1.4, 1.2) },
-  { name: "Circle", geo: new THREE.CircleGeometry(0.7, 32) },
-  { name: "Cone", geo: new THREE.ConeGeometry(0.7, 1.2, 24) },
+  // Box 参数：宽、高、深度 细分数
+  { name: "Box", geo: new THREE.BoxGeometry(1.2, 1.2, 1.2, 10, 10, 10) },
+  // Sphere 参数：半径、细分数、圆周细分数
+  { name: "Sphere", geo: new THREE.SphereGeometry(0.7, 12, 12) },
+  // Plane 参数：宽、高 细分数  太细就变成太阳能板了.....
+  { name: "Plane", geo: new THREE.PlaneGeometry(1.4, 1.2, 10, 10) },
+  // Circle 参数：半径 哈哈哈哈 这个好搞笑 可以确定原点开始的角度 也可以小三角数量，可以变成扇子哈哈哈哈  范围都是0-2Π
+  {
+    name: "Circle",
+    geo: new THREE.CircleGeometry(0.7, 24, Math.PI / 2, Math.PI * 0.7),
+  },
+  // Cone 参数：半径、高度 半径三角数 高度三角数  openEnded是否封顶 开始角度 圆锥长度
+  {
+    name: "Cone",
+    geo: new THREE.ConeGeometry(0.7, 1.2, 24, 24, false, 0, Math.PI * 0.7),
+  },
+  // cylineder 上半径 下半径 高度  半径三角数 高度三角数 是否封顶 开始角度 圆锥长度
   { name: "Cylinder", geo: new THREE.CylinderGeometry(0.6, 0.6, 1.3, 24) },
+  // 甜甜圈！torus  半径 横截面半径 半径三角数 圆周三角数  甜甜圈画出来的角度
   { name: "Torus", geo: new THREE.TorusGeometry(0.6, 0.22, 16, 40) },
+  // 一个看不懂的东西 纽结体   半径 横截面半径 半径三角数 圆周三角数 p基于自身绕了几个圈 q在圆环上绕了几个圈
   { name: "TorusKnot", geo: new THREE.TorusKnotGeometry(0.45, 0.15, 80, 12) },
+  // 十二面体  半径 | 细分层级（0=标准12面体，越大越接近球）
   { name: "Dodecahedron", geo: new THREE.DodecahedronGeometry(0.7) },
+  // 八面体  半径 | 细分层级（0=标准8面体，越大越接近球）
   { name: "Octahedron", geo: new THREE.OctahedronGeometry(0.8) },
 ];
 
