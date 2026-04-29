@@ -127,7 +127,7 @@ onMounted(() => {
           Math.sin((ix + iy + waveCount * 0.35) * 0.08) * 20;
         pos[ptr + 1] = wave;
         const t = THREE.MathUtils.clamp((wave + 140) / 280, 0, 1);
-        scl[idx] = THREE.MathUtils.lerp(18, 42, t);
+        scl[idx] = THREE.MathUtils.lerp(28, 42, t);
         ints[idx] = THREE.MathUtils.lerp(0.65, 1.85, t);
         ptr += 3;
         idx += 1;
@@ -136,7 +136,7 @@ onMounted(() => {
     geometry.attributes.position.needsUpdate = true;
     geometry.attributes.scale.needsUpdate = true;
     geometry.attributes.intensity.needsUpdate = true;
-    waveCount += 0.1;
+    waveCount += 0.2;
     // camera.position.x = Math.sin(waveCount * 0.18) * 140;
     // camera.position.z = 1180 + Math.cos(waveCount * 0.12) * 55;
     // camera.lookAt(0, 0, 0);
