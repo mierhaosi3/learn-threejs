@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wave Points</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #15161a;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.179.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.179.1/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+      const amountX = 50;
+      const amountY = 50;
+      const separation = 100;
+      const total = amountX * amountY;
+      let waveCount = 0;
+
+      const positions = new Float32Array(total * 3);
+      const scales = new Float32Array(total);
+      const intensities = new Float32Array(total);
+
+      let i = 0;
+      let p = 0;
+      for (let ix = 0; ix < amountX; ix++) {
+        for (let iy = 0; iy < amountY; iy++) {
+          positions[i] = ix * separation - (amountX * separation) / 2;
+          positions[i + 1] = 0;
+          positions[i + 2] = iy * separation - (amountY * separation) / 2;
+          scales[p] = 8;
+          intensities[p] = 0.6;
+          i += 3;
+          p += 1;
+        }
+      }
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x15161a);
+
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        10000,
+      );
+      camera.position.set(0, 400, 1200);
+      camera.lookAt(0, 0, 0);
+
+      const renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      document.body.appendChild(renderer.domElement);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.target.set(0, 0, 0);
+
+      scene.add(new THREE.HemisphereLight(0xb7c8ff, 0x2a2532, 0.25));
+      scene.add(new THREE.AmbientLight(0xffffff, 0.12));
+
+      const sun = new THREE.DirectionalLight(0xfff2de, 1.6);
+      sun.position.set(8, 12, 7);
+      sun.castShadow = true;
+      scene.add(sun);
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(positions, 3),
+      );
+      geometry.setAttribute("scale", new THREE.BufferAttribute(scales, 1));
+      geometry.setAttribute(
+        "intensity",
+        new THREE.BufferAttribute(intensities, 1),
+      );
+
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uBaseColor: { value: new THREE.Color(0x66ccff) },
+        },
+        vertexShader: `
+          attribute float scale;
+          attribute float intensity;
+          varying float vIntensity;
+          void main() {
+            vIntensity = intensity;
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = scale * (300.0 / -mvPosition.z);
+            gl_Position = projectionMatrix * mvPosition;
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 uBaseColor;
+          varying float vIntensity;
+          void main() {
+            vec2 c = gl_PointCoord * 2.0 - 1.0;
+            float r2 = dot(c, c);
+            if (r2 > 1.0) discard;
+            vec3 color = uBaseColor * vIntensity;
+            float alpha = (1.0 - r2) * (0.35 + vIntensity * 0.65);
+            gl_FragColor = vec4(color, alpha);
+          }
+        `,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+
+      const points = new THREE.Points(geometry, material);
+      scene.add(points);
+
+      function renderFrame() {
+        const pos = geometry.attributes.position.array;
+        const scl = geometry.attributes.scale.array;
+        const ints = geometry.attributes.intensity.array;
+        let ptr = 0;
+        let idx = 0;
+        for (let ix = 0; ix < amountX; ix++) {
+          for (let iy = 0; iy < amountY; iy++) {
+            const phase = Math.sin(ix * 12.9898 + iy * 78.233) * 43758.5453;
+            const rand = phase - Math.floor(phase);
+            const wave =
+              Math.sin((ix + waveCount * 1.05) * 0.16 + rand * 1) * 72 +
+              Math.sin((iy + waveCount * 0.9) * 0.23 + rand * 2.3) * 42 +
+              Math.sin((ix + iy + waveCount * 0.35) * 0.08) * 20;
+            pos[ptr + 1] = wave;
+            const t = THREE.MathUtils.clamp((wave + 140) / 280, 0, 1);
+            scl[idx] = THREE.MathUtils.lerp(28, 42, t);
+            ints[idx] = THREE.MathUtils.lerp(0.65, 1.85, t);
+            ptr += 3;
+            idx += 1;
+          }
+        }
+        geometry.attributes.position.needsUpdate = true;
+        geometry.attributes.scale.needsUpdate = true;
+        geometry.attributes.intensity.needsUpdate = true;
+        waveCount += 0.2;
+        controls.update();
+        renderer.render(scene, camera);
+        requestAnimationFrame(renderFrame);
+      }
+      renderFrame();
+
+      window.addEventListener("resize", () => {
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+      });
+    </script>
+  </body>
+</html>
