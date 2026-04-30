@@ -172,7 +172,10 @@ onMounted(() => {
   const depth = new THREE.MeshDepthMaterial();
 
   // 纯白球：MeshBasicMaterial 不受光照，color=白就是纯白
-  const white = new THREE.MeshBasicMaterial({color: 0xffffff, wireframe: true});
+  const white = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    wireframe: true,
+  });
 
   // ─────────────────────────────────────────────
   // 第二组：经典光照模型（需要光源）
