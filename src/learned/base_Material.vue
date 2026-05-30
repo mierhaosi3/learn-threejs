@@ -2,8 +2,8 @@
 
 <script setup lang="ts">
 import * as THREE from "three";
-import { onMounted, onUnmounted } from "vue";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import {onMounted, onUnmounted} from "vue";
+import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
 
 let rafId = 0;
 let renderer: THREE.WebGLRenderer;
@@ -110,7 +110,7 @@ onMounted(() => {
   camera.lookAt(0, 0, 10);
 
   // 使用抗锯齿
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer = new THREE.WebGLRenderer({antialias: true});
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
   document.getElementById("app")?.appendChild(renderer.domElement);
@@ -249,24 +249,23 @@ onMounted(() => {
   // ─────────────────────────────────────────────
   // 排列成网格展示
   // ─────────────────────────────────────────────
-  const materials: Array<{ mat: THREE.Material; geo?: THREE.BufferGeometry }> =
-    [
-      { mat: basic, geo: geoColored }, // 顶点色需要有颜色数据的几何体
-      { mat: normal },
-      { mat: depth },
-      { mat: white },
-      { mat: lambert },
-      { mat: phong },
-      { mat: toon },
-      { mat: standardPlastic },
-      { mat: standardMetal },
-      { mat: physical },
-    ];
+  const materials: Array<{mat: THREE.Material; geo?: THREE.BufferGeometry}> = [
+    {mat: basic, geo: geoColored}, // 顶点色需要有颜色数据的几何体
+    {mat: normal},
+    {mat: depth},
+    {mat: white},
+    {mat: lambert},
+    {mat: phong},
+    {mat: toon},
+    {mat: standardPlastic},
+    {mat: standardMetal},
+    {mat: physical},
+  ];
 
   const colCount = 5;
   const meshList: THREE.Mesh[] = [];
 
-  materials.forEach(({ mat, geo: itemGeo }, i) => {
+  materials.forEach(({mat, geo: itemGeo}, i) => {
     const mesh = new THREE.Mesh(itemGeo ?? geo, mat);
     const col = i % colCount;
     const row = Math.floor(i / colCount);

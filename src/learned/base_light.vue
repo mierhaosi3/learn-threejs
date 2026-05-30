@@ -2,8 +2,8 @@
 
 <script setup lang="ts">
 import * as THREE from "three";
-import { onMounted, onUnmounted } from "vue";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import {onMounted, onUnmounted} from "vue";
+import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
 
 let rafId = 0;
 let renderer: THREE.WebGLRenderer;
@@ -22,7 +22,7 @@ onMounted(() => {
   camera.position.set(0, 12, 22);
   camera.lookAt(0, 2, 0);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer = new THREE.WebGLRenderer({antialias: true});
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   // 允许渲染器开影子

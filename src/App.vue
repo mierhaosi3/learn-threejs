@@ -1,9 +1,20 @@
 <template></template>
 
 <script setup lang="ts">
+/**
+ * 纹理 Demo：网络贴图失败 → Canvas 程序化备胎；离开时 dispose 回收 GPU。
+ *
+ * 九颗球从左到右、从下到上排列（序号与 mats.push 顺序一致）：
+ *   ┌─────────────────────────────────┐
+ *   z=0      ① uv   ② uv+normal  ③ uv+roughness        (row 0)
+ *   z≈-4.8   ④ 砖bump⑤ 清漆coat ⑥ 自发光emissive       (row 1)
+ *   z≈-9.6   ⑦ 位移  ⑧ 透明alpha⑨ 丝绒sheen            (row 2)
+ *   「②」上会播 UV.offset 示意贴图位移。
+ */
+
 import * as THREE from "three";
-import { onMounted, onUnmounted } from "vue";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import {onMounted, onUnmounted} from "vue";
+import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
 
 const amountX = 50;
 const amountY = 50;
@@ -79,7 +90,7 @@ onMounted(() => {
   geometry.setAttribute("intensity", new THREE.BufferAttribute(intensities, 1));
   const material = new THREE.ShaderMaterial({
     uniforms: {
-      uBaseColor: { value: new THREE.Color(0x66ccff) },
+      uBaseColor: {value: new THREE.Color(0x66ccff)},
     },
     vertexShader: `
       attribute float scale;
